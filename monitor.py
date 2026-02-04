@@ -18,12 +18,14 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 CHAT_ID = os.getenv('CHAT_ID')
 EVENT_LINK = "https://buyticketbrasil.com/evento/my-chemical-romancedhzo?data=1770426000000&evento_local=1750799113580x614274902513418200"
 
-def load_price_history():
+def load_price_history() -> dict:
     try:
         with open(PRICE_HISTORY_FILE, 'r') as f:
             history = json.load(f)
             # Ensure safe defaults for new fields
-            if "lowest_price" not in history:
+            if not isinstance(history, dict):
+                history = {}
+            if history.get("lowest_price") is None:
                 history["lowest_price"] = 1000000
             if "last_cheapest_id" not in history:
                 history["last_cheapest_id"] = None
@@ -35,7 +37,7 @@ def save_price_history(data):
     with open(PRICE_HISTORY_FILE, 'w') as f:
         json.dump(data, f, indent=4)
 
-def send_telegram_alert(price, ticket_id,):
+def send_telegram_alert(price, ticket_type):
     if not TELEGRAM_TOKEN or not CHAT_ID:
         print("Credenciais do Telegram não configuradas. Pulando alerta.")
         return
@@ -43,7 +45,7 @@ def send_telegram_alert(price, ticket_id,):
     message = (
         f"🚨 **Alerta de Baixa de Preço!** 🚨\n\n"
         f"Novo Menor Preço: **R$ {int(price)}**\n"
-        f"Tipo de Ingresso: Pista Premium (Meia)\n\n"
+        f"Tipo de Ingresso: {ticket_type}\n\n"
         f"🎫 [Página do Evento]({EVENT_LINK})"
     )
     
@@ -187,7 +189,7 @@ def check_prices():
     print(f"Itens retornados nesta requisição (len(hits)): {len(hits)}")
 
     history = load_price_history()
-    last_lowest_price = history.get("lowest_price", 1000000)
+    last_lowest_price = int(history.get("lowest_price", 1000000))
     last_cheapest_id = history.get("last_cheapest_id")
     
     current_tickets = []
@@ -200,18 +202,20 @@ def check_prices():
         entrada_type = source.get('entrada_option_tipo_entrada')
         ticket_text = source.get('tipo_ingresso_text_text')
         
-        if entrada_type == "meia" and ticket_text == "Pista Premium":
+        if entrada_type in ["meia", "inteira"] and ticket_text == "Pista Premium":
             raw_price = source.get('valor_number', 0)
             total_price = math.ceil(raw_price * 1.10)
             slug = source.get('Slug', '')
             link = f"https://buyticketbrasil.com/anuncio/{slug}"
             
+            fullname = f"{ticket_text} ({entrada_type.capitalize()})"
             current_tickets.append({
                 "id": hit_id,
                 "price": total_price,
-                "link": link
+                "link": link,
+                "type": fullname
             })
-            print(f"Ingresso válido encontrado: R$ {total_price} (ID: {hit_id})")
+            print(f"Ingresso válido encontrado: R$ {total_price} ({fullname}) (ID: {hit_id})")
 
     if not current_tickets:
         print("Nenhum ingresso válido encontrado no momento.")
@@ -221,7 +225,7 @@ def check_prices():
     current_tickets.sort(key=lambda x: x['price'])
     best_deal = current_tickets[0]
     
-    new_lowest = best_deal['price']
+    new_lowest = int(best_deal['price'])
     new_cheapest_id = best_deal['id']
 
     # Lógica 1: Se o que era o mais barato foi vendido
@@ -235,7 +239,7 @@ def check_prices():
     if new_lowest < last_lowest_price:
         print(f"Novo menor preço encontrado: R$ {new_lowest}")
         if not was_sold: # Evita mandar dois alertas se ele era o anterior (embora se for menor, não seria o mesmo ID se estivessemos rastreando certo)
-            send_telegram_alert(new_lowest, "Pista Premium")
+            send_telegram_alert(new_lowest, best_deal['type'])
                 
         history["lowest_price"] = new_lowest
         history["last_cheapest_id"] = new_cheapest_id
