@@ -35,13 +35,13 @@ def save_price_history(data):
     with open(PRICE_HISTORY_FILE, 'w') as f:
         json.dump(data, f, indent=4)
 
-def send_telegram_alert(price, ticket_type):
+def send_telegram_alert(price, ticket_type, title="🚨 **NOVO MENOR PREÇO!** 🚨"):
     if not TELEGRAM_TOKEN or not CHAT_ID:
         print("Credenciais do Telegram não configuradas. Pulando alerta.")
         return
 
     message = (
-        f"🚨 **NOVO MENOR PREÇO!** 🚨\n\n"
+        f"{title}\n\n"
         f"Categoria: {ticket_type}\n"
         f"Valor: **R$ {int(price)}**\n\n"
         f"🎫 [Acesse o Site]({EVENT_LINK})"
@@ -175,6 +175,18 @@ def check_prices():
     if current_low < last_global_low:
         print("🔥 NOVO MENOR PREÇO DETECTADO!", flush=True)
         send_telegram_alert(current_low, f"Pista Premium ({best_overall['type']})")
+        
+        # Atualiza o histórico
+        history["lowest_price"] = current_low
+        history["last_type"] = best_overall['type']
+        save_price_history(history)
+    elif current_low > last_global_low:
+        print("💸 PREÇO SUBIU - INGRESSO ANTIGO VENDIDO!", flush=True)
+        send_telegram_alert(
+            current_low, 
+            f"Pista Premium ({best_overall['type']})",
+            title="⚠️ **INGRESSO ANTERIOR VENDIDO!** ⚠️ \n 💸 NOVO PREÇO MAIS BAIXO:"
+        )
         
         # Atualiza o histórico
         history["lowest_price"] = current_low
